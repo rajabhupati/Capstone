@@ -1,0 +1,82 @@
+from flask import Flask, session, redirect, url_for, escape, request, render_template
+from flask_session import Session
+from hashlib import md5
+import mysql.connector
+from mysql.connector import Error
+from mysql.connector import errorcode
+from tempfile import mkdtemp
+from helpers import apology, login_required
+import os
+app = Flask(__name__)
+app.secret_key = os.urandom(12)
+if __name__ == '__main__':
+     
+    db = mysql.connector.connect(host='retailapp.chhkxmzfw1fy.us-east-1.rds.amazonaws.com', port=3306, user='admin1', passwd='Veri1899$', db='retaildb')
+    cur = db.cursor()
+
+class ServerError(Exception):pass
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    session.clear()
+    if 'username' in session:
+        return redirect(url_for('index'))
+
+    error = None
+    try:
+        if request.method == 'POST':
+            username_form  = request.form['username']
+            cur.execute("SELECT COUNT(1) FROM users WHERE username = %s;",[username_form])
+
+            if not cur.fetchone()[0]:
+                raise ServerError('Invalid username')
+
+            password_form  = request.form['password']
+            cur.execute("SELECT hash FROM users WHERE username = %s;",[password_form])
+
+            for row in cur.fetchall():
+                if md5(password_form).hexdigest() == row[0]:
+                    session['username'] = request.form['username']
+                    return redirect(url_for('index'))
+
+            raise ServerError('Invalid password')
+    except ServerError as e:
+        error = str(e)
+    return render_template('login.html', error=error)
+
+
+@app.route("/buy", methods=["GET", "POST"])
+@login_required
+def buy():
+    session_username="raja"
+    bought=rows[0]["product_price"]
+    if request.method == "POST":
+        product = request.form.get("product")
+        rows = db.execute("Select * from products where product_name= %s;", [product])
+        if not rows[0]["product_name"]:
+            return apology("Product does not exists")
+        quantity= int(request.form.get("quantity"))
+        if quantity<0:
+            return apology("Enter valid quantity")
+        if (quantity > rows[0]["product_stock"]):
+            return apology("Stock not available")
+        else:
+            cash = db.execute("Select cash from users where username=%s;", [session_username])
+            if not cash or float(cash[0]["cash"] < float(rows[0]["product_price"])):
+                return apology("Not enough cash")
+        db.execute("Update users set cash = cash - %s where username = %s;", [bought], [session_username])
+        flash('Bought')
+        db.execute("insert into invoice(inv_date, total, product_id, username) values (datetime('now', 'localtime'), :total, :p_id, :id)",rows[0]["product_price"],rows[0]["product_id"], [session_username])
+
+        db.execute("Update products set product_stock = product_stock - %s where product_name=%s", [quantity],[product])
+        return redirect(url_for("index"))
+    else:
+        return render_template("buy.html")
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('login'))
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0',port=80,debug=True)
